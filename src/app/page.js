@@ -15,6 +15,12 @@ import {
   PARAMETER_CATEGORIES,
   generateMasterWebsitePrompt
 } from "@/data/websitePromptParameters";
+import {
+  GBP_PILLARS,
+  GBP_FREE_TOOLS,
+  GBP_POST_TEMPLATES,
+  getGBPTasksForDay
+} from "@/data/gbpTasksEngine";
 
 export default function Home() {
   const [clients, setClients] = useState([]);
@@ -29,6 +35,11 @@ export default function Home() {
   // 300 Website Prompt Parameters State
   const [paramCategoryFilter, setParamCategoryFilter] = useState("all");
   const [paramSearchQuery, setParamSearchQuery] = useState("");
+
+  // Google Business Profile (GBP) 100-Day / 500 Tasks State
+  const [gbpStepIndex, setGbpStepIndex] = useState(0);
+  const [gbpViewMode, setGbpViewMode] = useState("guided");
+  const [gbpSearchQuery, setGbpSearchQuery] = useState("");
   
   // Modals
   const [showAddClientModal, setShowAddClientModal] = useState(false);
@@ -192,6 +203,48 @@ export default function Home() {
     showNotification(allDone ? `Reset 10 tasks for Day ${currentDayNum}` : `All 10 tasks marked done for Day ${currentDayNum}!`);
   };
 
+  // Toggle Individual GBP Task (1 of 500 tasks)
+  const toggleGbpTaskId = (taskId) => {
+    if (!activeClient) return;
+    const currentTaskIds = activeClient.completedGbpTaskIds || [];
+    const isDone = currentTaskIds.includes(taskId);
+    const updated = isDone
+      ? currentTaskIds.filter(id => id !== taskId)
+      : [...currentTaskIds, taskId];
+
+    const updatedClients = clients.map(c => {
+      if (c.id === activeClient.id) {
+        return { ...c, completedGbpTaskIds: updated };
+      }
+      return c;
+    });
+    setClients(updatedClients);
+  };
+
+  // Toggle All 5 GBP Tasks for the Day
+  const toggleAllGbpTasksForDay = (dailyTasks, currentDayNum) => {
+    if (!activeClient) return;
+    const currentTaskIds = new Set(activeClient.completedGbpTaskIds || []);
+    const allDailyIds = dailyTasks.map(t => t.id);
+    const allDone = allDailyIds.every(id => currentTaskIds.has(id));
+
+    if (allDone) {
+      allDailyIds.forEach(id => currentTaskIds.delete(id));
+    } else {
+      allDailyIds.forEach(id => currentTaskIds.add(id));
+    }
+
+    const updatedTaskIds = Array.from(currentTaskIds);
+    const updatedClients = clients.map(c => {
+      if (c.id === activeClient.id) {
+        return { ...c, completedGbpTaskIds: updatedTaskIds };
+      }
+      return c;
+    });
+    setClients(updatedClients);
+    showNotification(allDone ? `Reset 5 GBP tasks for Day ${currentDayNum}` : `All 5 GBP tasks marked done for Day ${currentDayNum}!`);
+  };
+
   // Open Proof Logger Modal
   const openProofLogger = (day) => {
     setCurrentLoggingDay(day);
@@ -309,6 +362,33 @@ export default function Home() {
     showNotification("Copied Complete 300-Rule Master Website Creation Prompt!");
   };
 
+  const handleCopyAll300DirectivesForClaude = () => {
+    const rawDirectives = WEBSITE_PROMPT_PARAMETERS.map(p =>
+      `Rule #${p.id} [${p.tag.toUpperCase()}] (${p.importance}) - ${p.name}:\n${p.directive}`
+    ).join("\n\n");
+
+    const fullClaudePrompt = `CRITICAL ARCHITECTURAL DIRECTIVES FOR WEBSITE GENERATION:
+You are an expert full-stack web developer and elite SEO architect. When building, styling, or coding this website, you must strictly implement and adhere to ALL 300 of the following engineering and SEO directives without exception:
+
+Website Name: ${activeClient?.name || "Client Website"}
+Domain: ${activeClient?.domain || "example.com"}
+Industry: ${activeClient?.industry || "Services"}
+Target Keywords: ${Array.isArray(activeClient?.primaryKeywords) ? activeClient?.primaryKeywords.join(", ") : (activeClient?.primaryKeywords || "Primary Keywords")}
+
+============================================================
+ALL 300 ARCHITECTURAL & SEO PARAMETERS (RULES 1 TO 300)
+============================================================
+
+${rawDirectives}
+
+============================================================
+END OF 300 DIRECTIVES.
+Acknowledge that you will strictly implement every single rule when generating the website architecture, HTML, and copy.`;
+
+    navigator.clipboard.writeText(fullClaudePrompt);
+    showNotification("Copied All 300 Directives at once for Claude / ChatGPT!");
+  };
+
   const exportParametersAsJSON = () => {
     const blob = new Blob([JSON.stringify(WEBSITE_PROMPT_PARAMETERS, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -319,12 +399,35 @@ export default function Home() {
     showNotification("Exported 300 Website Prompt Parameters as JSON!");
   };
 
+  const handleCopyMorningPost = () => {
+    const text = GBP_POST_TEMPLATES.morningPost({
+      clientName: activeClient?.name || "Our Business",
+      service: Array.isArray(activeClient?.primaryKeywords) ? activeClient?.primaryKeywords[0] : (activeClient?.primaryKeywords || "Specialist Service"),
+      location: activeClient?.industry || "Local City"
+    });
+    navigator.clipboard.writeText(text);
+    showNotification("Copied Daily Morning GBP Post #1 Template!");
+  };
+
+  const handleCopyEveningOffer = () => {
+    const text = GBP_POST_TEMPLATES.eveningOffer({
+      clientName: activeClient?.name || "Our Business",
+      service: Array.isArray(activeClient?.primaryKeywords) ? activeClient?.primaryKeywords[0] : (activeClient?.primaryKeywords || "Specialist Service"),
+      location: activeClient?.industry || "Local City"
+    });
+    navigator.clipboard.writeText(text);
+    showNotification("Copied Daily Evening GBP Post #2 Template!");
+  };
+
   // Metrics Calculations
   const completedCount = activeClient ? (activeClient.completedDays || []).length : 0;
   const overallProgress = Math.round((completedCount / 100) * 100);
 
   const completedTasksCount = activeClient ? (activeClient.completedTaskIds || []).length : 0;
   const tasksProgress = Math.round((completedTasksCount / 1000) * 100);
+
+  const completedGbpTasksCount = activeClient ? (activeClient.completedGbpTaskIds || []).length : 0;
+  const gbpProgress = Math.round((completedGbpTasksCount / 500) * 100);
 
   const phase1Completed = activeClient
     ? (activeClient.completedDays || []).filter(d => d <= 15).length
@@ -663,6 +766,13 @@ export default function Home() {
             className={`btn ${activeTab === "parameters" ? "btn-primary" : "btn-secondary"}`}
           >
             ⚡ 300 Website Prompt Parameters (Best Structure)
+          </button>
+
+          <button
+            onClick={() => setActiveTab("gbp")}
+            className={`btn ${activeTab === "gbp" ? "btn-primary" : "btn-secondary"}`}
+          >
+            📍 Google Business Profile (Local 3-Pack 500 Tasks)
           </button>
 
           <button
@@ -1672,22 +1782,84 @@ export default function Home() {
                 </div>
 
                 {/* Master Action Buttons */}
-                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                  <button
-                    onClick={handleCopyMasterPrompt}
-                    className="btn btn-primary"
-                    style={{ padding: "10px 20px", display: "flex", alignItems: "center", gap: "8px", fontSize: "0.92rem" }}
-                  >
-                    <span>📋</span>
-                    <span>Copy Complete 300-Rule Master Prompt</span>
-                  </button>
+                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
                   <button
                     onClick={exportParametersAsJSON}
                     className="btn btn-secondary"
-                    style={{ padding: "10px 18px", display: "flex", alignItems: "center", gap: "8px", fontSize: "0.92rem" }}
+                    style={{ padding: "10px 16px", display: "flex", alignItems: "center", gap: "8px", fontSize: "0.88rem" }}
                   >
                     <span>📥</span>
                     <span>Export JSON</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* DEDICATED HIGH-VISIBILITY CLAUDE & CHATGPT MASTER COPY BANNER */}
+              <div
+                style={{
+                  background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(56, 189, 248, 0.15))",
+                  border: "2px solid rgba(99, 102, 241, 0.6)",
+                  boxShadow: "0 8px 30px rgba(99, 102, 241, 0.25)",
+                  borderRadius: "14px",
+                  padding: "20px 24px",
+                  marginTop: "16px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: "16px"
+                }}
+              >
+                <div style={{ maxWidth: "620px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                    <span style={{ fontSize: "1.2rem" }}>🤖</span>
+                    <h3 style={{ fontSize: "1.15rem", fontWeight: "800", color: "#ffffff", margin: 0 }}>
+                      1-Click Full Export for Claude & ChatGPT
+                    </h3>
+                    <span style={{ background: "#10b981", color: "#ffffff", fontSize: "0.7rem", fontWeight: "800", padding: "2px 8px", borderRadius: "12px", textTransform: "uppercase" }}>
+                      Instant Copy
+                    </span>
+                  </div>
+                  <p style={{ color: "#cbd5e1", fontSize: "0.88rem", margin: 0, lineHeight: "1.4" }}>
+                    Copy all <strong>300 architectural directives</strong> in a single formatted prompt block. Give it to Claude 3.5 Sonnet or ChatGPT at once before coding!
+                  </p>
+                </div>
+
+                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                  <button
+                    onClick={handleCopyAll300DirectivesForClaude}
+                    className="btn btn-primary"
+                    style={{
+                      padding: "12px 24px",
+                      fontSize: "0.95rem",
+                      fontWeight: "800",
+                      background: "linear-gradient(135deg, #6366f1, #38bdf8)",
+                      boxShadow: "0 0 25px rgba(99, 102, 241, 0.5)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      border: "none",
+                      cursor: "pointer"
+                    }}
+                  >
+                    <span>📋</span>
+                    <span>COPY ALL 300 DIRECTIVES FOR CLAUDE</span>
+                  </button>
+
+                  <button
+                    onClick={handleCopyMasterPrompt}
+                    className="btn btn-secondary"
+                    style={{
+                      padding: "12px 18px",
+                      fontSize: "0.88rem",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      background: "rgba(255, 255, 255, 0.05)"
+                    }}
+                  >
+                    <span>⚡</span>
+                    <span>Copy Master Agent Prompt</span>
                   </button>
                 </div>
               </div>
@@ -1934,6 +2106,376 @@ export default function Home() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* TAB: GOOGLE BUSINESS PROFILE (GBP / LOCAL 3-PACK 500 TASKS) */}
+        {activeTab === "gbp" && (
+          <div>
+            {/* Header & Stats Banner */}
+            <div style={{ marginBottom: "24px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px" }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
+                    <span className="badge badge-completed" style={{ fontSize: "0.8rem", padding: "4px 10px" }}>
+                      📍 Google 3-Pack Engine
+                    </span>
+                    <span className="badge badge-medium" style={{ fontSize: "0.8rem", padding: "4px 10px" }}>
+                      500 Actionable Local Tasks (5 / Day)
+                    </span>
+                  </div>
+                  <h2 style={{ fontSize: "1.5rem", marginBottom: "6px" }}>
+                    Google Business Profile Dominance Engine
+                  </h2>
+                  <p style={{ color: "var(--text-secondary)", fontSize: "0.92rem", lineHeight: "1.5", maxWidth: "820px" }}>
+                    100-Day step-by-step blueprint to rank <strong>{activeClient?.name}</strong> in the Top 3 of Google Maps and local search. 100% free tools only, photo geo-metadata, review velocity formulas, and spam fighting to maximize customer phone calls and direction requests.
+                  </p>
+                </div>
+
+                {/* Progress Bar Widget */}
+                <div
+                  className="glass-panel"
+                  style={{
+                    padding: "16px 20px",
+                    minWidth: "280px",
+                    border: "1px solid rgba(255, 255, 255, 0.08)"
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
+                    <span style={{ fontSize: "0.82rem", color: "var(--text-secondary)" }}>500 Local Tasks Progress</span>
+                    <span style={{ fontSize: "0.95rem", fontWeight: "700", color: "#10b981" }}>
+                      {completedGbpTasksCount} / 500 ({gbpProgress}%)
+                    </span>
+                  </div>
+                  <div style={{ width: "100%", height: "8px", background: "rgba(255, 255, 255, 0.08)", borderRadius: "4px", overflow: "hidden" }}>
+                    <div
+                      style={{
+                        width: `${gbpProgress}%`,
+                        height: "100%",
+                        background: "linear-gradient(90deg, #10b981, #38bdf8)",
+                        borderRadius: "4px",
+                        transition: "width 0.4s ease"
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* View Mode Toggle */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", background: "rgba(16, 21, 34, 0.7)", padding: "10px 16px", borderRadius: "12px", border: "1px solid var(--border)", flexWrap: "wrap", gap: "10px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)", fontWeight: "600" }}>GBP View Mode:</span>
+                <button
+                  onClick={() => setGbpViewMode("guided")}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: "8px",
+                    fontSize: "0.85rem",
+                    fontWeight: "700",
+                    cursor: "pointer",
+                    border: gbpViewMode === "guided" ? "1px solid #10b981" : "1px solid var(--border)",
+                    background: gbpViewMode === "guided" ? "rgba(16, 185, 129, 0.15)" : "transparent",
+                    color: gbpViewMode === "guided" ? "#34d399" : "var(--text-muted)"
+                  }}
+                >
+                  🌱 Simple 1-Day Mode (5 Daily Tasks)
+                </button>
+                <button
+                  onClick={() => setGbpViewMode("matrix")}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: "8px",
+                    fontSize: "0.85rem",
+                    fontWeight: "700",
+                    cursor: "pointer",
+                    border: gbpViewMode === "matrix" ? "1px solid var(--accent-cyan)" : "1px solid var(--border)",
+                    background: gbpViewMode === "matrix" ? "rgba(56, 189, 248, 0.15)" : "transparent",
+                    color: gbpViewMode === "matrix" ? "var(--accent-cyan)" : "var(--text-muted)"
+                  }}
+                >
+                  📊 Full 100-Day Overview
+                </button>
+              </div>
+
+              <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                {gbpViewMode === "guided" ? "Showing 5 targeted tasks for today" : "Displaying full 500-task matrix"}
+              </span>
+            </div>
+
+            {/* 10-Stage GBP Lifecycle Navigation Pills */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "8px", marginBottom: "20px" }}>
+              {GBP_PILLARS.map((pillar, pIdx) => {
+                const startDayIdx = pIdx * 10;
+                const endDayIdx = startDayIdx + 9;
+                const isActive = gbpStepIndex >= startDayIdx && gbpStepIndex <= endDayIdx;
+                return (
+                  <div
+                    key={pillar.id}
+                    onClick={() => setGbpStepIndex(startDayIdx)}
+                    style={{
+                      padding: "10px 12px",
+                      borderRadius: "10px",
+                      cursor: "pointer",
+                      border: isActive ? "1px solid var(--accent-cyan)" : "1px solid var(--border)",
+                      background: isActive ? "rgba(56, 189, 248, 0.15)" : "rgba(16, 21, 34, 0.6)",
+                      transition: "all 0.15s ease"
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                      <span style={{ fontSize: "1rem" }}>{pillar.icon}</span>
+                      <span style={{ fontSize: "0.78rem", fontWeight: "700", color: isActive ? "var(--accent-cyan)" : "var(--text-primary)" }}>
+                        Stage {pIdx + 1}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", whiteHeight: "1.2" }}>
+                      {pillar.name.split(":")[1]?.trim() || pillar.name}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* GUIDED MODE (5 TASKS PER DAY) */}
+            {gbpViewMode === "guided" ? (
+              <div style={{ maxWidth: "840px", margin: "0 auto" }}>
+                {(() => {
+                  const currentDayNum = gbpStepIndex + 1;
+                  const dailyTasks = getGBPTasksForDay(currentDayNum);
+                  const currentCompletedGbp = activeClient?.completedGbpTaskIds || [];
+                  const allDailyDone = dailyTasks.every(t => currentCompletedGbp.includes(t.id));
+                  const doneCount = dailyTasks.filter(t => currentCompletedGbp.includes(t.id)).length;
+                  const currentPillar = GBP_PILLARS[Math.min(9, Math.floor(gbpStepIndex / 10))];
+
+                  return (
+                    <div className="glass-panel" style={{ padding: "28px", border: allDailyDone ? "1px solid #10b981" : "1px solid var(--border)" }}>
+                      {/* Day Header */}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "14px", marginBottom: "20px", borderBottom: "1px solid var(--border)", paddingBottom: "16px" }}>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
+                            <span className="badge badge-high" style={{ fontSize: "0.85rem", padding: "4px 12px" }}>
+                              {currentPillar.icon} Day {currentDayNum} of 100
+                            </span>
+                            <span className="badge badge-medium" style={{ fontSize: "0.78rem" }}>
+                              {currentPillar.name}
+                            </span>
+                          </div>
+                          <h3 style={{ fontSize: "1.3rem", color: "#ffffff", marginTop: "4px" }}>
+                            Daily Local 3-Pack Tasks ({doneCount} / 5 Done)
+                          </h3>
+                          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "4px" }}>
+                            {currentPillar.focus}
+                          </p>
+                        </div>
+
+                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+                          <button
+                            onClick={handleCopyMorningPost}
+                            className="btn btn-secondary"
+                            style={{ padding: "8px 14px", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "6px" }}
+                          >
+                            <span>☀️</span>
+                            <span>Copy Morning Post #1</span>
+                          </button>
+                          <button
+                            onClick={handleCopyEveningOffer}
+                            className="btn btn-secondary"
+                            style={{ padding: "8px 14px", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "6px" }}
+                          >
+                            <span>🌙</span>
+                            <span>Copy Evening Post #2</span>
+                          </button>
+                          <button
+                            onClick={() => toggleAllGbpTasksForDay(dailyTasks, currentDayNum)}
+                            className={allDailyDone ? "btn btn-secondary" : "btn btn-primary"}
+                            style={{ padding: "8px 18px", fontSize: "0.85rem" }}
+                          >
+                            {allDailyDone ? "↺ Reset Day Tasks" : "✓ Mark All 5 Done"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 5 Daily Micro-Tasks Checklist */}
+                      <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginBottom: "24px" }}>
+                        {dailyTasks.map((task) => {
+                          const isDone = currentCompletedGbp.includes(task.id);
+                          return (
+                            <div
+                              key={task.id}
+                              onClick={() => toggleGbpTaskId(task.id)}
+                              style={{
+                                padding: "16px",
+                                borderRadius: "10px",
+                                background: isDone ? "rgba(16, 185, 129, 0.08)" : "rgba(15, 23, 42, 0.6)",
+                                border: isDone ? "1px solid #10b981" : "1px solid rgba(255, 255, 255, 0.06)",
+                                cursor: "pointer",
+                                transition: "all 0.15s ease"
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={isDone}
+                                  onChange={() => {}}
+                                  style={{ marginTop: "4px", width: "18px", height: "18px", cursor: "pointer", accentColor: "#10b981" }}
+                                />
+
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "6px" }}>
+                                    <span style={{ fontSize: "0.75rem", fontWeight: "700", color: isDone ? "#34d399" : "var(--accent-cyan)", background: "rgba(56, 189, 248, 0.1)", padding: "2px 7px", borderRadius: "6px" }}>
+                                      Task #{task.taskIndex} • {task.type}
+                                    </span>
+                                    <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", background: "rgba(255, 255, 255, 0.05)", padding: "2px 7px", borderRadius: "6px" }}>
+                                      🛠️ {task.tool}
+                                    </span>
+                                  </div>
+
+                                  <h4 style={{ fontSize: "0.95rem", fontWeight: "700", color: isDone ? "#94a3b8" : "#ffffff", textDecoration: isDone ? "line-through" : "none", marginBottom: "4px" }}>
+                                    {task.title}
+                                  </h4>
+
+                                  <p style={{ fontSize: "0.85rem", color: isDone ? "#64748b" : "#cbd5e1", lineHeight: "1.4", marginBottom: "8px" }}>
+                                    {task.description}
+                                  </p>
+
+                                  {/* Ranking Hack Box */}
+                                  <div
+                                    style={{
+                                      background: "rgba(245, 158, 11, 0.08)",
+                                      border: "1px solid rgba(245, 158, 11, 0.25)",
+                                      borderRadius: "8px",
+                                      padding: "8px 12px",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "8px"
+                                    }}
+                                  >
+                                    <span style={{ fontSize: "0.9rem" }}>⚡</span>
+                                    <span style={{ fontSize: "0.78rem", color: "#fcd34d", lineHeight: "1.3" }}>
+                                      <strong>Agency Hack:</strong> {task.hack}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Day Stepper Footer */}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--border)", paddingTop: "18px" }}>
+                        <button
+                          disabled={gbpStepIndex === 0}
+                          onClick={() => setGbpStepIndex(prev => Math.max(0, prev - 1))}
+                          className="btn btn-secondary"
+                          style={{ opacity: gbpStepIndex === 0 ? 0.4 : 1 }}
+                        >
+                          ← Previous Day
+                        </button>
+
+                        <div style={{ textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                          Day {currentDayNum} of 100 ({doneCount}/5 Tasks)
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            if (!allDailyDone) toggleAllGbpTasksForDay(dailyTasks, currentDayNum);
+                            setGbpStepIndex(prev => Math.min(99, prev + 1));
+                          }}
+                          className="btn btn-success"
+                          style={{ padding: "10px 22px", fontSize: "0.95rem" }}
+                        >
+                          {allDailyDone ? "Next Day →" : "✓ Mark Done & Next Day →"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : (
+              /* FULL 100-DAY OVERVIEW MATRIX */
+              <div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "16px" }}>
+                  {Array.from({ length: 100 }, (_, i) => i + 1).map((dayNum) => {
+                    const tasks = getGBPTasksForDay(dayNum);
+                    const currentCompletedGbp = activeClient?.completedGbpTaskIds || [];
+                    const doneCount = tasks.filter(t => currentCompletedGbp.includes(t.id)).length;
+                    const allDone = doneCount === 5;
+                    const pIdx = Math.min(9, Math.floor((dayNum - 1) / 10));
+                    const pillar = GBP_PILLARS[pIdx];
+
+                    return (
+                      <div
+                        key={dayNum}
+                        className="glass-panel"
+                        style={{
+                          padding: "16px",
+                          border: allDone ? "1px solid #10b981" : "1px solid rgba(255, 255, 255, 0.08)",
+                          cursor: "pointer"
+                        }}
+                        onClick={() => {
+                          setGbpStepIndex(dayNum - 1);
+                          setGbpViewMode("guided");
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                          <span style={{ fontSize: "0.85rem", fontWeight: "700", color: allDone ? "#34d399" : "var(--accent-cyan)" }}>
+                            {pillar.icon} Day {dayNum}
+                          </span>
+                          <span style={{ fontSize: "0.75rem", padding: "2px 8px", borderRadius: "10px", background: allDone ? "rgba(16, 185, 129, 0.2)" : "rgba(255, 255, 255, 0.05)", color: allDone ? "#34d399" : "var(--text-muted)" }}>
+                            {doneCount} / 5 Done
+                          </span>
+                        </div>
+
+                        <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)", marginBottom: "10px" }}>
+                          {pillar.name}
+                        </div>
+
+                        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                          {tasks.map(t => (
+                            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem", color: currentCompletedGbp.includes(t.id) ? "#64748b" : "#cbd5e1" }}>
+                              <span>{currentCompletedGbp.includes(t.id) ? "✓" : "○"}</span>
+                              <span style={{ textDecoration: currentCompletedGbp.includes(t.id) ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {t.title}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 100% Free GBP Tools Drawer */}
+            <div style={{ marginTop: "36px" }}>
+              <h3 style={{ fontSize: "1.2rem", marginBottom: "14px", display: "flex", alignItems: "center", gap: "8px" }}>
+                <span>🛠️</span> 100% Free Google Business Profile Tools Arsenal
+              </h3>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "14px" }}>
+                {GBP_FREE_TOOLS.map((t, idx) => (
+                  <div key={idx} className="glass-panel" style={{ padding: "16px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                      <h4 style={{ fontSize: "0.95rem", color: "#ffffff", fontWeight: "700" }}>{t.name}</h4>
+                      <a
+                        href={t.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn btn-secondary"
+                        style={{ padding: "4px 10px", fontSize: "0.75rem", textDecoration: "none" }}
+                      >
+                        Launch ↗
+                      </a>
+                    </div>
+                    <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", margin: 0 }}>
+                      {t.desc}
+                    </p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
