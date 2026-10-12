@@ -2428,55 +2428,148 @@ Acknowledge that you will strictly implement every single rule when generating t
             ) : (
               /* FULL 100-DAY OVERVIEW MATRIX */
               <div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "16px" }}>
-                  {Array.from({ length: 100 }, (_, i) => i + 1).map((dayNum) => {
-                    const tasks = getGBPTasksForDay(dayNum);
-                    const currentCompletedGbp = activeClient?.completedGbpTaskIds || [];
-                    const doneCount = tasks.filter(t => currentCompletedGbp.includes(t.id)).length;
-                    const allDone = doneCount === 5;
-                    const pIdx = Math.min(9, Math.floor((dayNum - 1) / 10));
-                    const pillar = GBP_PILLARS[pIdx];
+                {/* Search & Tool Filter Bar */}
+                <div
+                  className="glass-panel"
+                  style={{
+                    padding: "14px 18px",
+                    marginBottom: "20px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: "12px"
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: "260px" }}>
+                    <input
+                      type="text"
+                      placeholder="🔍 Search 500 tasks by tool, extension, or hack (e.g. PlePer, Apple Maps, Bing, UTM, EXIF, Q&A, Schema, Redressal)..."
+                      value={gbpSearchQuery}
+                      onChange={(e) => setGbpSearchQuery(e.target.value)}
+                      style={{ width: "100%", padding: "9px 14px", fontSize: "0.85rem" }}
+                    />
+                  </div>
+                  {gbpSearchQuery && (
+                    <button
+                      onClick={() => setGbpSearchQuery("")}
+                      className="btn btn-secondary"
+                      style={{ padding: "6px 12px", fontSize: "0.78rem" }}
+                    >
+                      Clear Search
+                    </button>
+                  )}
+                </div>
 
-                    return (
-                      <div
-                        key={dayNum}
-                        className="glass-panel"
-                        style={{
-                          padding: "16px",
-                          border: allDone ? "1px solid #10b981" : "1px solid rgba(255, 255, 255, 0.08)",
-                          cursor: "pointer"
-                        }}
-                        onClick={() => {
-                          setGbpStepIndex(dayNum - 1);
-                          setGbpViewMode("guided");
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                          <span style={{ fontSize: "0.85rem", fontWeight: "700", color: allDone ? "#34d399" : "var(--accent-cyan)" }}>
-                            {pillar.icon} Day {dayNum}
-                          </span>
-                          <span style={{ fontSize: "0.75rem", padding: "2px 8px", borderRadius: "10px", background: allDone ? "rgba(16, 185, 129, 0.2)" : "rgba(255, 255, 255, 0.05)", color: allDone ? "#34d399" : "var(--text-muted)" }}>
-                            {doneCount} / 5 Done
-                          </span>
-                        </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: "16px" }}>
+                  {Array.from({ length: 100 }, (_, i) => i + 1)
+                    .filter((dayNum) => {
+                      if (!gbpSearchQuery.trim()) return true;
+                      const q = gbpSearchQuery.toLowerCase();
+                      const tasks = getGBPTasksForDay(dayNum);
+                      const match = tasks.some(
+                        (t) =>
+                          t.title.toLowerCase().includes(q) ||
+                          t.tool.toLowerCase().includes(q) ||
+                          t.description.toLowerCase().includes(q) ||
+                          t.hack.toLowerCase().includes(q)
+                      );
+                      return match || String(dayNum).includes(q);
+                    })
+                    .map((dayNum) => {
+                      const tasks = getGBPTasksForDay(dayNum);
+                      const currentCompletedGbp = activeClient?.completedGbpTaskIds || [];
+                      const doneCount = tasks.filter((t) => currentCompletedGbp.includes(t.id)).length;
+                      const allDone = doneCount === 5;
+                      const pIdx = Math.min(9, Math.floor((dayNum - 1) / 10));
+                      const pillar = GBP_PILLARS[pIdx];
 
-                        <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)", marginBottom: "10px" }}>
-                          {pillar.name}
-                        </div>
+                      return (
+                        <div
+                          key={dayNum}
+                          className="glass-panel"
+                          style={{
+                            padding: "16px",
+                            border: allDone ? "1px solid #10b981" : "1px solid rgba(255, 255, 255, 0.08)",
+                            cursor: "pointer",
+                            transition: "all 0.15s ease"
+                          }}
+                          onClick={() => {
+                            setGbpStepIndex(dayNum - 1);
+                            setGbpViewMode("guided");
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                            <span style={{ fontSize: "0.85rem", fontWeight: "700", color: allDone ? "#34d399" : "var(--accent-cyan)" }}>
+                              {pillar.icon} Day {dayNum}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: "0.75rem",
+                                padding: "2px 8px",
+                                borderRadius: "10px",
+                                background: allDone ? "rgba(16, 185, 129, 0.2)" : "rgba(255, 255, 255, 0.05)",
+                                color: allDone ? "#34d399" : "var(--text-muted)"
+                              }}
+                            >
+                              {doneCount} / 5 Done
+                            </span>
+                          </div>
 
-                        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                          {tasks.map(t => (
-                            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem", color: currentCompletedGbp.includes(t.id) ? "#64748b" : "#cbd5e1" }}>
-                              <span>{currentCompletedGbp.includes(t.id) ? "✓" : "○"}</span>
-                              <span style={{ textDecoration: currentCompletedGbp.includes(t.id) ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {t.title}
-                              </span>
-                            </div>
-                          ))}
+                          <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)", marginBottom: "12px" }}>
+                            {pillar.name}
+                          </div>
+
+                          <div style={{ display: "flex", flexDirection: "column", gap: "7px" }}>
+                            {tasks.map((t) => (
+                              <div
+                                key={t.id}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  gap: "8px",
+                                  padding: "5px 8px",
+                                  borderRadius: "6px",
+                                  background: "rgba(255, 255, 255, 0.02)",
+                                  fontSize: "0.73rem"
+                                }}
+                              >
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px", overflow: "hidden", flex: 1 }}>
+                                  <span style={{ color: currentCompletedGbp.includes(t.id) ? "#10b981" : "var(--accent-cyan)", fontWeight: "700", flexShrink: 0 }}>
+                                    {t.taskIndex === 1 ? "☀️" : t.taskIndex === 2 ? "🌙" : t.taskIndex === 3 ? "📍" : t.taskIndex === 4 ? "⚡" : "⭐"}
+                                  </span>
+                                  <span
+                                    style={{
+                                      textDecoration: currentCompletedGbp.includes(t.id) ? "line-through" : "none",
+                                      color: currentCompletedGbp.includes(t.id) ? "#64748b" : "#e2e8f0",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap"
+                                    }}
+                                  >
+                                    {t.title}
+                                  </span>
+                                </div>
+                                <span
+                                  style={{
+                                    fontSize: "0.64rem",
+                                    color: "var(--accent-cyan)",
+                                    background: "rgba(56, 189, 248, 0.12)",
+                                    padding: "2px 6px",
+                                    borderRadius: "4px",
+                                    whiteSpace: "nowrap",
+                                    flexShrink: 0
+                                  }}
+                                >
+                                  {t.tool.split(" ")[0]}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
                 </div>
               </div>
             )}
