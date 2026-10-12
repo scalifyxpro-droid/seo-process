@@ -425,21 +425,17 @@ export default function Home() {
         >
           {/* Brand */}
           <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-            <div
+            <img
+              src="/siteicon.svg"
+              alt="SEO Growth OS Site Icon"
+              width="42"
+              height="42"
               style={{
-                width: "42px",
-                height: "42px",
                 borderRadius: "12px",
-                background: "linear-gradient(135deg, #38bdf8, #6366f1)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "1.4rem",
-                boxShadow: "0 0 20px rgba(56, 189, 248, 0.4)"
+                boxShadow: "0 0 20px rgba(56, 189, 248, 0.4)",
+                display: "block"
               }}
-            >
-              🚀
-            </div>
+            />
             <div>
               <h1 style={{ fontSize: "1.25rem", color: "var(--text-primary)", lineHeight: 1.2 }}>
                 SEO Growth OS
