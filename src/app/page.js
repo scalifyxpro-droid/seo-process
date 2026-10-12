@@ -9,6 +9,12 @@ import {
   INITIAL_CLIENTS
 } from "@/data/seoKnowledgeBase";
 import { generateLocationPage, DEFAULT_LOCATIONS } from "@/data/programmaticEngine";
+import { getTasksForDay, PILLARS_1000 } from "@/data/thousandTasksEngine";
+import {
+  WEBSITE_PROMPT_PARAMETERS,
+  PARAMETER_CATEGORIES,
+  generateMasterWebsitePrompt
+} from "@/data/websitePromptParameters";
 
 export default function Home() {
   const [clients, setClients] = useState([]);
@@ -19,6 +25,10 @@ export default function Home() {
   const [roadmapFilter, setRoadmapFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDay, setSelectedDay] = useState(null);
+  
+  // 300 Website Prompt Parameters State
+  const [paramCategoryFilter, setParamCategoryFilter] = useState("all");
+  const [paramSearchQuery, setParamSearchQuery] = useState("");
   
   // Modals
   const [showAddClientModal, setShowAddClientModal] = useState(false);
@@ -114,10 +124,10 @@ export default function Home() {
   // Toggle Day Completion
   const toggleDayStatus = (dayNum) => {
     if (!activeClient) return;
-    const isDone = activeClient.completedDays.includes(dayNum);
+    const isDone = (activeClient.completedDays || []).includes(dayNum);
     const updatedCompleted = isDone
-      ? activeClient.completedDays.filter(d => d !== dayNum)
-      : [...activeClient.completedDays, dayNum];
+      ? (activeClient.completedDays || []).filter(d => d !== dayNum)
+      : [...(activeClient.completedDays || []), dayNum];
 
     const updatedClients = clients.map(c => {
       if (c.id === activeClient.id) {
@@ -126,6 +136,60 @@ export default function Home() {
       return c;
     });
     setClients(updatedClients);
+  };
+
+  // Toggle Individual Micro-Task (1 of 1,000 tasks)
+  const toggleTaskId = (taskId) => {
+    if (!activeClient) return;
+    const currentTaskIds = activeClient.completedTaskIds || [];
+    const isDone = currentTaskIds.includes(taskId);
+    const updated = isDone
+      ? currentTaskIds.filter(id => id !== taskId)
+      : [...currentTaskIds, taskId];
+
+    const updatedClients = clients.map(c => {
+      if (c.id === activeClient.id) {
+        return { ...c, completedTaskIds: updated };
+      }
+      return c;
+    });
+    setClients(updatedClients);
+  };
+
+  // Toggle All 10 Micro-Tasks for the Day
+  const toggleAllTasksForDay = (dailyTasks, currentDayNum) => {
+    if (!activeClient) return;
+    const currentTaskIds = new Set(activeClient.completedTaskIds || []);
+    const allDailyIds = dailyTasks.map(t => t.id);
+    const allDone = allDailyIds.every(id => currentTaskIds.has(id));
+
+    if (allDone) {
+      allDailyIds.forEach(id => currentTaskIds.delete(id));
+    } else {
+      allDailyIds.forEach(id => currentTaskIds.add(id));
+    }
+
+    const updatedTaskIds = Array.from(currentTaskIds);
+    const isDayCompleted = !allDone;
+    let updatedCompletedDays = activeClient.completedDays || [];
+    if (isDayCompleted && !updatedCompletedDays.includes(currentDayNum)) {
+      updatedCompletedDays = [...updatedCompletedDays, currentDayNum];
+    } else if (!isDayCompleted && updatedCompletedDays.includes(currentDayNum)) {
+      updatedCompletedDays = updatedCompletedDays.filter(d => d !== currentDayNum);
+    }
+
+    const updatedClients = clients.map(c => {
+      if (c.id === activeClient.id) {
+        return {
+          ...c,
+          completedTaskIds: updatedTaskIds,
+          completedDays: updatedCompletedDays
+        };
+      }
+      return c;
+    });
+    setClients(updatedClients);
+    showNotification(allDone ? `Reset 10 tasks for Day ${currentDayNum}` : `All 10 tasks marked done for Day ${currentDayNum}!`);
   };
 
   // Open Proof Logger Modal
@@ -234,17 +298,41 @@ export default function Home() {
     showNotification(`${label} copied to clipboard!`);
   };
 
+  const handleCopyMasterPrompt = () => {
+    const promptText = generateMasterWebsitePrompt({
+      clientName: activeClient?.name || "Client Website",
+      websiteUrl: activeClient?.domain || "example.com",
+      industry: activeClient?.industry || "Services",
+      primaryService: Array.isArray(activeClient?.primaryKeywords) ? activeClient?.primaryKeywords[0] : (activeClient?.primaryKeywords || "Primary Service")
+    });
+    navigator.clipboard.writeText(promptText);
+    showNotification("Copied Complete 300-Rule Master Website Creation Prompt!");
+  };
+
+  const exportParametersAsJSON = () => {
+    const blob = new Blob([JSON.stringify(WEBSITE_PROMPT_PARAMETERS, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `300-website-prompt-parameters.json`;
+    a.click();
+    showNotification("Exported 300 Website Prompt Parameters as JSON!");
+  };
+
   // Metrics Calculations
-  const completedCount = activeClient ? activeClient.completedDays.length : 0;
+  const completedCount = activeClient ? (activeClient.completedDays || []).length : 0;
   const overallProgress = Math.round((completedCount / 100) * 100);
 
+  const completedTasksCount = activeClient ? (activeClient.completedTaskIds || []).length : 0;
+  const tasksProgress = Math.round((completedTasksCount / 1000) * 100);
+
   const phase1Completed = activeClient
-    ? activeClient.completedDays.filter(d => d <= 15).length
+    ? (activeClient.completedDays || []).filter(d => d <= 15).length
     : 0;
   const phase1Progress = Math.round((phase1Completed / 15) * 100);
 
   const phase2Completed = activeClient
-    ? activeClient.completedDays.filter(d => d > 15).length
+    ? (activeClient.completedDays || []).filter(d => d > 15).length
     : 0;
   const phase2Progress = Math.round((phase2Completed / 85) * 100);
 
@@ -265,6 +353,22 @@ export default function Home() {
         item.tool.toLowerCase().includes(q) ||
         item.plainEnglish.toLowerCase().includes(q) ||
         String(item.dayNumber).includes(q);
+      if (!match) return false;
+    }
+    return true;
+  });
+
+  // Filter 300 Website Prompt Parameters
+  const filteredParameters = WEBSITE_PROMPT_PARAMETERS.filter((p) => {
+    if (paramCategoryFilter !== "all" && p.category !== paramCategoryFilter) return false;
+    if (paramSearchQuery.trim() !== "") {
+      const q = paramSearchQuery.toLowerCase();
+      const match =
+        p.name.toLowerCase().includes(q) ||
+        p.directive.toLowerCase().includes(q) ||
+        p.tag.toLowerCase().includes(q) ||
+        String(p.id).includes(q) ||
+        p.importance.toLowerCase().includes(q);
       if (!match) return false;
     }
     return true;
@@ -415,50 +519,68 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Progress Toward 100 Days */}
+              {/* Progress Toward 1,000 Tasks & 100 Days */}
               <div style={{ background: "rgba(10, 13, 20, 0.6)", padding: "16px", borderRadius: "12px", border: "1px solid var(--border)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
-                  <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>100-Day Completion</span>
-                  <span style={{ fontSize: "0.95rem", fontWeight: "700", color: "var(--accent-cyan)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
+                  <span style={{ fontSize: "0.82rem", color: "var(--text-secondary)" }}>1,000 Actionable Tasks</span>
+                  <span style={{ fontSize: "0.95rem", fontWeight: "700", color: "#10b981" }}>
+                    {completedTasksCount} / 1,000 Tasks ({tasksProgress}%)
+                  </span>
+                </div>
+                <div style={{ width: "100%", height: "6px", background: "rgba(255, 255, 255, 0.08)", borderRadius: "3px", overflow: "hidden", marginBottom: "12px" }}>
+                  <div
+                    style={{
+                      width: `${tasksProgress}%`,
+                      height: "100%",
+                      background: "linear-gradient(90deg, #10b981, #38bdf8)",
+                      borderRadius: "3px",
+                      transition: "width 0.4s ease"
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
+                  <span style={{ fontSize: "0.82rem", color: "var(--text-secondary)" }}>100-Day Lifecycle Roadmap</span>
+                  <span style={{ fontSize: "0.9rem", fontWeight: "600", color: "var(--accent-cyan)" }}>
                     {completedCount} / 100 Days ({overallProgress}%)
                   </span>
                 </div>
-                <div style={{ width: "100%", height: "8px", background: "rgba(255, 255, 255, 0.08)", borderRadius: "4px", overflow: "hidden" }}>
+                <div style={{ width: "100%", height: "6px", background: "rgba(255, 255, 255, 0.08)", borderRadius: "3px", overflow: "hidden" }}>
                   <div
                     style={{
                       width: `${overallProgress}%`,
                       height: "100%",
-                      background: "linear-gradient(90deg, #38bdf8, #10b981)",
-                      borderRadius: "4px",
+                      background: "linear-gradient(90deg, #38bdf8, #6366f1)",
+                      borderRadius: "3px",
                       transition: "width 0.4s ease"
                     }}
                   />
                 </div>
               </div>
 
-              {/* Phase 1 vs Phase 2 Split */}
+              {/* 10-Stage Flow & Free Arsenal Badges */}
               <div style={{ display: "flex", gap: "12px" }}>
                 <div style={{ flex: 1, background: "rgba(10, 13, 20, 0.6)", padding: "14px", borderRadius: "12px", border: "1px solid var(--border)" }}>
-                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block" }}>
-                    PHASE 1 (TECH SPRINT)
+                  <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", display: "block" }}>
+                    PROCESS ARCHITECTURE
                   </span>
-                  <span style={{ fontSize: "1.2rem", fontWeight: "700", color: phase1Progress === 100 ? "#10b981" : "#38bdf8" }}>
-                    {phase1Completed}/15 Days
+                  <span style={{ fontSize: "1.1rem", fontWeight: "700", color: "#38bdf8" }}>
+                    10 Stages (0→1000)
                   </span>
-                  <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "block" }}>
-                    {phase1Progress}% Foundation Done
+                  <span style={{ fontSize: "0.75rem", color: "#94a3b8", display: "block" }}>
+                    Design to 10k Clicks
                   </span>
                 </div>
 
                 <div style={{ flex: 1, background: "rgba(10, 13, 20, 0.6)", padding: "14px", borderRadius: "12px", border: "1px solid var(--border)" }}>
-                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block" }}>
-                    PHASE 2 (REPETITION ENGINE)
+                  <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", display: "block" }}>
+                    BUDGET & ARSENAL
                   </span>
-                  <span style={{ fontSize: "1.2rem", fontWeight: "700", color: "#a855f7" }}>
-                    {phase2Completed}/85 Days
+                  <span style={{ fontSize: "1.1rem", fontWeight: "700", color: "#10b981" }}>
+                    100% Free Tools
                   </span>
-                  <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "block" }}>
-                    {phase2Progress}% Sprints Executed
+                  <span style={{ fontSize: "0.75rem", color: "#94a3b8", display: "block" }}>
+                    $0 Tool Spend Required
                   </span>
                 </div>
               </div>
@@ -537,28 +659,14 @@ export default function Home() {
             onClick={() => setActiveTab("roadmap")}
             className={`btn ${activeTab === "roadmap" ? "btn-primary" : "btn-secondary"}`}
           >
-            🗓️ 100-Day Action Roadmap ({completedCount}/100)
+            🎯 100-Day Process Engine (1,000 Tasks)
           </button>
 
           <button
-            onClick={() => setActiveTab("knowledge")}
-            className={`btn ${activeTab === "knowledge" ? "btn-primary" : "btn-secondary"}`}
+            onClick={() => setActiveTab("parameters")}
+            className={`btn ${activeTab === "parameters" ? "btn-primary" : "btn-secondary"}`}
           >
-            📚 Plain-English Knowledge Base & AI Prompts
-          </button>
-
-          <button
-            onClick={() => setActiveTab("tools")}
-            className={`btn ${activeTab === "tools" ? "btn-primary" : "btn-secondary"}`}
-          >
-            🛠️ Free Tools & Extensions Arsenal ({FREE_TOOLS_DIRECTORY.length})
-          </button>
-
-          <button
-            onClick={() => setActiveTab("proof")}
-            className={`btn ${activeTab === "proof" ? "btn-primary" : "btn-secondary"}`}
-          >
-            📋 Proof of Work & Client Report ({Object.keys(activeClient?.proofLogs || {}).length} Logs)
+            ⚡ 300 Website Prompt Parameters (Best Structure)
           </button>
 
           <button
@@ -566,6 +674,27 @@ export default function Home() {
             className={`btn ${activeTab === "programmatic" ? "btn-primary" : "btn-secondary"}`}
           >
             🏭 Location & Keyword Pages (pSEO Engine)
+          </button>
+
+          <button
+            onClick={() => setActiveTab("tools")}
+            className={`btn ${activeTab === "tools" ? "btn-primary" : "btn-secondary"}`}
+          >
+            🛠️ 100% Free Tools Arsenal ({FREE_TOOLS_DIRECTORY.length})
+          </button>
+
+          <button
+            onClick={() => setActiveTab("knowledge")}
+            className={`btn ${activeTab === "knowledge" ? "btn-primary" : "btn-secondary"}`}
+          >
+            📚 Knowledge Base & AI Prompts
+          </button>
+
+          <button
+            onClick={() => setActiveTab("proof")}
+            className={`btn ${activeTab === "proof" ? "btn-primary" : "btn-secondary"}`}
+          >
+            📊 Activity & Indexing Logs ({Object.keys(activeClient?.proofLogs || {}).length})
           </button>
         </div>
 
@@ -575,30 +704,31 @@ export default function Home() {
             {viewMode === "guided" ? (
               /* GUIDED SIMPLE MODE - 1 TASK AT A TIME */
               <div style={{ maxWidth: "800px", margin: "0 auto" }}>
-                {/* Stage Progress Pills */}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "10px", marginBottom: "20px" }}>
-                  {[
-                    { stage: "Stage 1", label: "Foundation (Days 1-15)", range: [0, 14], color: "var(--accent-cyan)" },
-                    { stage: "Stage 2", label: "Targets (Days 16-35)", range: [15, 34], color: "#6366f1" },
-                    { stage: "Stage 3", label: "Page Factory (Days 36-75)", range: [35, 74], color: "#a855f7" },
-                    { stage: "Stage 4", label: "Harvest Clicks (Days 76-100)", range: [75, 99], color: "#10b981" }
-                  ].map((st) => {
-                    const isActive = currentStepIndex >= st.range[0] && currentStepIndex <= st.range[1];
+                {/* 10-Stage Lifecycle Navigation Pills */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "8px", marginBottom: "20px" }}>
+                  {PILLARS_1000.map((pillar, pIdx) => {
+                    const startDayIdx = pIdx * 10;
+                    const endDayIdx = startDayIdx + 9;
+                    const isActive = currentStepIndex >= startDayIdx && currentStepIndex <= endDayIdx;
                     return (
                       <div
-                        key={st.stage}
-                        onClick={() => setCurrentStepIndex(st.range[0])}
+                        key={pillar.id}
+                        onClick={() => setCurrentStepIndex(startDayIdx)}
                         style={{
-                          background: isActive ? "rgba(56, 189, 248, 0.12)" : "rgba(255, 255, 255, 0.03)",
-                          border: isActive ? `1px solid ${st.color}` : "1px solid var(--border)",
-                          padding: "10px 14px",
-                          borderRadius: "10px",
+                          background: isActive ? "rgba(56, 189, 248, 0.15)" : "rgba(255, 255, 255, 0.02)",
+                          border: isActive ? "1px solid var(--accent-cyan)" : "1px solid var(--border)",
+                          padding: "8px 10px",
+                          borderRadius: "8px",
                           cursor: "pointer",
                           transition: "all 0.2s"
                         }}
                       >
-                        <span style={{ fontSize: "0.75rem", color: st.color, fontWeight: "700", display: "block" }}>{st.stage}</span>
-                        <span style={{ fontSize: "0.85rem", color: isActive ? "#fff" : "var(--text-secondary)", fontWeight: "600" }}>{st.label}</span>
+                        <span style={{ fontSize: "0.7rem", color: isActive ? "var(--accent-cyan)" : "var(--text-muted)", fontWeight: "700", display: "block" }}>
+                          {pillar.icon} Stage {pIdx + 1}
+                        </span>
+                        <span style={{ fontSize: "0.75rem", color: isActive ? "#fff" : "var(--text-secondary)", fontWeight: "600", display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {pillar.days}
+                        </span>
                       </div>
                     );
                   })}
@@ -607,7 +737,8 @@ export default function Home() {
                 {/* The Active Single Step Focus Card */}
                 {fullProgram[currentStepIndex] && (() => {
                   const currentItem = fullProgram[currentStepIndex];
-                  const isDone = activeClient?.completedDays?.includes(currentItem.dayNumber);
+                  const isDone = (activeClient?.completedDays || []).includes(currentItem.dayNumber);
+                  const dailyTasks = getTasksForDay(currentItem.dayNumber);
 
                   return (
                     <div className="glass-panel" style={{ padding: "32px", border: isDone ? "1px solid #10b981" : "1px solid var(--border)", boxShadow: "0 20px 40px rgba(0,0,0,0.4)" }}>
@@ -620,7 +751,7 @@ export default function Home() {
                           <span className={currentItem.impact === "Critical" ? "badge badge-critical" : "badge badge-high"}>
                             {currentItem.impact}
                           </span>
-                          {isDone && <span className="badge badge-completed">✓ Finished</span>}
+                          {isDone && <span className="badge badge-completed">✓ Day Completed</span>}
                         </div>
                       </div>
 
@@ -649,16 +780,105 @@ export default function Home() {
                         </p>
                       </div>
 
-                      {/* Action Items */}
-                      <div style={{ marginBottom: "24px" }}>
-                        <h4 style={{ fontSize: "0.85rem", color: "var(--text-muted)", textTransform: "uppercase", marginBottom: "10px" }}>
-                          What To Do Today:
-                        </h4>
-                        <ul style={{ paddingLeft: "20px", display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.92rem", color: "#cbd5e1" }}>
-                          {currentItem.actionSteps.map((step, idx) => (
-                            <li key={idx}>{step}</li>
-                          ))}
-                        </ul>
+                      {/* 10 DAILY MICRO-TASKS CHECKLIST */}
+                      <div style={{ marginBottom: "26px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px", flexWrap: "wrap", gap: "8px" }}>
+                          <h4 style={{ fontSize: "0.95rem", color: "var(--accent-cyan)", textTransform: "uppercase", fontWeight: "700", display: "flex", alignItems: "center", gap: "6px" }}>
+                            ⚡ 10 Daily Micro-Tasks (Tasks {(currentItem.dayNumber - 1) * 10 + 1} to {currentItem.dayNumber * 10} of 1,000)
+                          </h4>
+                          <button
+                            onClick={() => toggleAllTasksForDay(dailyTasks, currentItem.dayNumber)}
+                            className="btn btn-secondary"
+                            style={{ fontSize: "0.75rem", padding: "5px 12px" }}
+                          >
+                            ✓ Toggle All 10 Tasks
+                          </button>
+                        </div>
+
+                        {/* Programmatic Banner on Days 51-60 */}
+                        {currentItem.dayNumber >= 51 && currentItem.dayNumber <= 60 && (
+                          <div style={{ background: "rgba(99, 102, 241, 0.12)", border: "1px solid #6366f1", borderRadius: "10px", padding: "14px", marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
+                            <div>
+                              <span style={{ fontSize: "0.8rem", color: "#818cf8", fontWeight: "700", display: "block" }}>
+                                🚀 STAGE 6: PROGRAMMATIC SEO MULTI-PAGE ENGINE ACTIVE (DAYS 51–60)
+                              </span>
+                              <span style={{ fontSize: "0.85rem", color: "#e2e8f0" }}>
+                                Launch 1,000s of location & keyword pages with 1,000+ words & 1.5% density using our built-in generator.
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => setActiveTab("programmatic")}
+                              className="btn btn-primary"
+                              style={{ fontSize: "0.8rem", padding: "8px 14px" }}
+                            >
+                              Open pSEO Generator →
+                            </button>
+                          </div>
+                        )}
+
+                        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                          {dailyTasks.map((task) => {
+                            const isTaskDone = (activeClient?.completedTaskIds || []).includes(task.id);
+                            return (
+                              <div
+                                key={task.id}
+                                style={{
+                                  background: isTaskDone ? "rgba(16, 185, 129, 0.05)" : "rgba(10, 13, 20, 0.5)",
+                                  border: isTaskDone ? "1px solid rgba(16, 185, 129, 0.3)" : "1px solid var(--border)",
+                                  borderRadius: "10px",
+                                  padding: "14px",
+                                  transition: "all 0.2s"
+                                }}
+                              >
+                                <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={!!isTaskDone}
+                                    onChange={() => toggleTaskId(task.id)}
+                                    style={{ marginTop: "4px", width: "18px", height: "18px", cursor: "pointer", accentColor: "#10b981" }}
+                                  />
+                                  <div style={{ flex: 1 }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px", marginBottom: "4px" }}>
+                                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.75rem", color: "var(--accent-cyan)", fontWeight: "700" }}>
+                                          [{task.id}]
+                                        </span>
+                                        <span style={{ fontSize: "0.9rem", fontWeight: "700", color: isTaskDone ? "#94a3b8" : "#fff", textDecoration: isTaskDone ? "line-through" : "none" }}>
+                                          {task.shortTitle}
+                                        </span>
+                                      </div>
+                                      <div style={{ display: "flex", gap: "6px" }}>
+                                        <span className="badge badge-low" style={{ fontSize: "0.7rem", padding: "2px 8px" }}>
+                                          🛠️ {task.tool}
+                                        </span>
+                                        <span className="badge badge-medium" style={{ fontSize: "0.7rem", padding: "2px 8px" }}>
+                                          {task.pillar}
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    <p style={{ fontSize: "0.85rem", color: "#cbd5e1", margin: "4px 0 6px 0", lineHeight: "1.5" }}>
+                                      {task.action}
+                                    </p>
+
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+                                      <span style={{ fontSize: "0.75rem", color: "#94a3b8", fontStyle: "italic" }}>
+                                        💡 {task.tip}
+                                      </span>
+                                      <button
+                                        onClick={() => copyToClipboard(task.prompt, `${task.id} AI Prompt`)}
+                                        className="btn btn-secondary"
+                                        style={{ fontSize: "0.72rem", padding: "4px 8px" }}
+                                      >
+                                        📋 1-Click AI Prompt
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
 
                       {/* Action Buttons Bar */}
@@ -1429,6 +1649,296 @@ export default function Home() {
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* TAB: 300 WEBSITE PROMPT PARAMETERS (BEST STRUCTURE & ARCHITECTURE ENGINE) */}
+        {activeTab === "parameters" && (
+          <div>
+            {/* Header Banner */}
+            <div style={{ marginBottom: "24px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px" }}>
+                <div style={{ maxWidth: "780px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
+                    <span className="badge badge-completed" style={{ fontSize: "0.8rem", padding: "4px 10px" }}>
+                      ⚡ 300 Architectural Rules
+                    </span>
+                    <span className="badge badge-medium" style={{ fontSize: "0.8rem", padding: "4px 10px" }}>
+                      100% Free / Agency-Grade
+                    </span>
+                  </div>
+                  <h2 style={{ fontSize: "1.5rem", marginBottom: "6px" }}>
+                    300 Master Parameters for Website Creation Prompts
+                  </h2>
+                  <p style={{ color: "var(--text-secondary)", fontSize: "0.92rem", lineHeight: "1.5" }}>
+                    Paste these 300 architectural directives into your AI prompt (Claude / ChatGPT / Gemini) when designing or coding any website. It forces the AI to output flawless 2026 Core Web Vitals, Semantic HTML5, AEO Answer Targets, GEO Entity Citations, and Hierarchical Silos from Day 1.
+                  </p>
+                </div>
+
+                {/* Master Action Buttons */}
+                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                  <button
+                    onClick={handleCopyMasterPrompt}
+                    className="btn btn-primary"
+                    style={{ padding: "10px 20px", display: "flex", alignItems: "center", gap: "8px", fontSize: "0.92rem" }}
+                  >
+                    <span>📋</span>
+                    <span>Copy Complete 300-Rule Master Prompt</span>
+                  </button>
+                  <button
+                    onClick={exportParametersAsJSON}
+                    className="btn btn-secondary"
+                    style={{ padding: "10px 18px", display: "flex", alignItems: "center", gap: "8px", fontSize: "0.92rem" }}
+                  >
+                    <span>📥</span>
+                    <span>Export JSON</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Category Filter Navigation Pills */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                gap: "8px",
+                marginBottom: "20px"
+              }}
+            >
+              {PARAMETER_CATEGORIES.map((cat) => {
+                const isSelected = paramCategoryFilter === cat.id;
+                return (
+                  <div
+                    key={cat.id}
+                    onClick={() => setParamCategoryFilter(cat.id)}
+                    style={{
+                      padding: "10px 14px",
+                      borderRadius: "10px",
+                      cursor: "pointer",
+                      border: isSelected ? "1px solid var(--accent-cyan)" : "1px solid var(--border)",
+                      background: isSelected ? "rgba(56, 189, 248, 0.14)" : "rgba(16, 21, 34, 0.6)",
+                      transition: "all 0.15s ease",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "8px"
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span style={{ fontSize: "1rem" }}>{cat.icon}</span>
+                      <span
+                        style={{
+                          fontSize: "0.82rem",
+                          fontWeight: isSelected ? "700" : "500",
+                          color: isSelected ? "#38bdf8" : "var(--text-secondary)"
+                        }}
+                      >
+                        {cat.name}
+                      </span>
+                    </div>
+                    <span
+                      style={{
+                        fontSize: "0.72rem",
+                        padding: "2px 7px",
+                        borderRadius: "12px",
+                        background: isSelected ? "rgba(56, 189, 248, 0.25)" : "rgba(255, 255, 255, 0.05)",
+                        color: isSelected ? "#ffffff" : "var(--text-muted)",
+                        fontWeight: "600"
+                      }}
+                    >
+                      {cat.count}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Search Bar & Result Summary */}
+            <div
+              className="glass-panel"
+              style={{
+                padding: "16px 20px",
+                marginBottom: "24px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "14px"
+              }}
+            >
+              <div style={{ flex: 1, minWidth: "260px" }}>
+                <input
+                  type="text"
+                  placeholder="Search across all 300 parameters (e.g. LCP, schema, alt text, font display, breadcrumb)..."
+                  value={paramSearchQuery}
+                  onChange={(e) => setParamSearchQuery(e.target.value)}
+                  style={{ width: "100%", padding: "10px 14px", fontSize: "0.9rem" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                  Showing <strong style={{ color: "var(--accent-cyan)" }}>{filteredParameters.length}</strong> of 300 Directives
+                </span>
+                {paramSearchQuery && (
+                  <button
+                    onClick={() => setParamSearchQuery("")}
+                    className="btn btn-secondary"
+                    style={{ padding: "6px 12px", fontSize: "0.78rem" }}
+                  >
+                    Clear Filter
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 300 Parameters Grid */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))",
+                gap: "16px"
+              }}
+            >
+              {filteredParameters.map((param) => {
+                const importanceColor =
+                  param.importance === "Mandatory"
+                    ? "#ef4444"
+                    : param.importance === "Critical"
+                    ? "#f59e0b"
+                    : "#38bdf8";
+
+                return (
+                  <div
+                    key={param.id}
+                    className="glass-panel"
+                    style={{
+                      padding: "18px",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                      border: "1px solid rgba(255, 255, 255, 0.07)",
+                      position: "relative",
+                      transition: "transform 0.15s ease, border-color 0.15s ease"
+                    }}
+                  >
+                    <div>
+                      {/* Top Meta Header */}
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginBottom: "10px"
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span
+                            style={{
+                              fontFamily: "'JetBrains Mono', monospace",
+                              fontSize: "0.75rem",
+                              fontWeight: "700",
+                              color: "var(--accent-cyan)",
+                              background: "rgba(56, 189, 248, 0.12)",
+                              padding: "2px 7px",
+                              borderRadius: "6px"
+                            }}
+                          >
+                            #{String(param.id).padStart(3, "0")}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: "0.72rem",
+                              fontWeight: "600",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.04em",
+                              color: "var(--text-muted)",
+                              background: "rgba(255, 255, 255, 0.04)",
+                              padding: "2px 6px",
+                              borderRadius: "4px"
+                            }}
+                          >
+                            {param.tag}
+                          </span>
+                        </div>
+
+                        <span
+                          style={{
+                            fontSize: "0.7rem",
+                            fontWeight: "700",
+                            color: importanceColor,
+                            border: `1px solid ${importanceColor}40`,
+                            background: `${importanceColor}15`,
+                            padding: "2px 8px",
+                            borderRadius: "10px"
+                          }}
+                        >
+                          {param.importance}
+                        </span>
+                      </div>
+
+                      {/* Directive Name */}
+                      <h4
+                        style={{
+                          fontSize: "0.98rem",
+                          fontWeight: "700",
+                          color: "#ffffff",
+                          marginBottom: "8px",
+                          lineHeight: "1.3"
+                        }}
+                      >
+                        {param.name}
+                      </h4>
+
+                      {/* Directive Instruction */}
+                      <div
+                        style={{
+                          background: "rgba(10, 13, 20, 0.75)",
+                          border: "1px solid rgba(255, 255, 255, 0.05)",
+                          borderRadius: "8px",
+                          padding: "12px",
+                          marginBottom: "14px"
+                        }}
+                      >
+                        <p
+                          style={{
+                            fontSize: "0.84rem",
+                            color: "#cbd5e1",
+                            lineHeight: "1.5",
+                            margin: 0
+                          }}
+                        >
+                          {param.directive}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Copy Directive Action */}
+                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                      <button
+                        onClick={() => {
+                          const directiveText = `[Rule #${param.id} - ${param.tag}] ${param.name}: ${param.directive}`;
+                          navigator.clipboard.writeText(directiveText);
+                          showNotification(`Copied Rule #${param.id} directive!`);
+                        }}
+                        className="btn btn-secondary"
+                        style={{
+                          padding: "6px 12px",
+                          fontSize: "0.78rem",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px"
+                        }}
+                      >
+                        <span>📋</span>
+                        <span>Copy Directive</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </main>
