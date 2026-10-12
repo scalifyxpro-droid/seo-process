@@ -399,24 +399,32 @@ Acknowledge that you will strictly implement every single rule when generating t
     showNotification("Exported 300 Website Prompt Parameters as JSON!");
   };
 
-  const handleCopyMorningPost = () => {
-    const text = GBP_POST_TEMPLATES.morningPost({
-      clientName: activeClient?.name || "Our Business",
-      service: Array.isArray(activeClient?.primaryKeywords) ? activeClient?.primaryKeywords[0] : (activeClient?.primaryKeywords || "Specialist Service"),
-      location: activeClient?.industry || "Local City"
-    });
+  const handleCopyMorningPost = (dayNum = gbpStepIndex + 1) => {
+    const tasks = getGBPTasksForDay(dayNum);
+    const morningTask = tasks.find(t => t.taskIndex === 1);
+    let text = morningTask?.postTemplate || "";
+    if (activeClient) {
+      text = text
+        .replace(/\[BUSINESS_NAME\]/g, activeClient.name)
+        .replace(/\[SERVICE\]/g, Array.isArray(activeClient.primaryKeywords) ? activeClient.primaryKeywords[0] : (activeClient.primaryKeywords || "Specialist Service"))
+        .replace(/\[CITY\/LOCATION\]/g, activeClient.industry || "Our City");
+    }
     navigator.clipboard.writeText(text);
-    showNotification("Copied Daily Morning GBP Post #1 Template!");
+    showNotification(`Copied Day ${dayNum} Morning Post #1 Template!`);
   };
 
-  const handleCopyEveningOffer = () => {
-    const text = GBP_POST_TEMPLATES.eveningOffer({
-      clientName: activeClient?.name || "Our Business",
-      service: Array.isArray(activeClient?.primaryKeywords) ? activeClient?.primaryKeywords[0] : (activeClient?.primaryKeywords || "Specialist Service"),
-      location: activeClient?.industry || "Local City"
-    });
+  const handleCopyEveningOffer = (dayNum = gbpStepIndex + 1) => {
+    const tasks = getGBPTasksForDay(dayNum);
+    const eveningTask = tasks.find(t => t.taskIndex === 2);
+    let text = eveningTask?.postTemplate || "";
+    if (activeClient) {
+      text = text
+        .replace(/\[BUSINESS_NAME\]/g, activeClient.name)
+        .replace(/\[SERVICE\]/g, Array.isArray(activeClient.primaryKeywords) ? activeClient.primaryKeywords[0] : (activeClient.primaryKeywords || "Specialist Service"))
+        .replace(/\[CITY\/LOCATION\]/g, activeClient.industry || "Our City");
+    }
     navigator.clipboard.writeText(text);
-    showNotification("Copied Daily Evening GBP Post #2 Template!");
+    showNotification(`Copied Day ${dayNum} Evening Post #2 Template!`);
   };
 
   // Metrics Calculations
@@ -2338,6 +2346,30 @@ Acknowledge that you will strictly implement every single rule when generating t
                                   <p style={{ fontSize: "0.85rem", color: isDone ? "#64748b" : "#cbd5e1", lineHeight: "1.4", marginBottom: "8px" }}>
                                     {task.description}
                                   </p>
+
+                                  {task.postTemplate && (
+                                    <div style={{ marginBottom: "10px" }}>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (task.taskIndex === 1) handleCopyMorningPost(currentDayNum);
+                                          else if (task.taskIndex === 2) handleCopyEveningOffer(currentDayNum);
+                                        }}
+                                        className="btn btn-primary"
+                                        style={{
+                                          padding: "5px 12px",
+                                          fontSize: "0.76rem",
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: "6px"
+                                        }}
+                                      >
+                                        <span>📋</span>
+                                        <span>Copy {task.taskIndex === 1 ? "Morning Post Text" : "Evening Offer Text"}</span>
+                                      </button>
+                                    </div>
+                                  )}
 
                                   {/* Ranking Hack Box */}
                                   <div
